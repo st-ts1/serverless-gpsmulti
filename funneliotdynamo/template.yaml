@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  funneliotdynamo
+
+  SORACOM Funnel - IoT Core(ACT) - DynamoDB - Lambda - API Gateway
+
+# SAMをdeployするときに指定するパラメータ
+Parameters:
+  # mailアドレス
+  mailaddress:
+    Description: e-mail-address
+    Type: String
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Api:
+   Cors: # CROSの設定
+     AllowMethods: "'*'"
+     AllowHeaders: "'*'"
+     AllowOrigin: "'*'"
+  Function:
+    Timeout: 5
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref FunnelIoTTable # Lambda実行時の環境変数TABLE_NAMEで参照可能になる
+        MAIL_ADDRESS: !Ref mailaddress
+
+Resources:
+  # テーブル
+  FunnelIoTTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PROVISIONED # 無料枠はこっち
+      AttributeDefinitions:
+        - AttributeName: "imsi" # 属性定義
+          AttributeType: "S"    # 文字列
+        - AttributeName: "timestamp"
+          AttributeType: "N"    # 数値
+      KeySchema:
+        - AttributeName: "imsi"
+          KeyType: "HASH" # ハッシュキー
+        - AttributeName: "timestamp"
+          KeyType: "RANGE" # レンジキー
+      TimeToLiveSpecification:
+        AttributeName: "TTL"
+        Enabled: true # TTLの有効化 
+      ProvisionedThroughput:
+        ReadCapacityUnits: 2
+        WriteCapacityUnits: 2
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE # データ更新の場合は、新しい(更新済み)データをlambdaに渡す。
+  # テーブルに登録する為のIAMロール
+  FunnelIoTTablePutItemRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "iot.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: "FunnelIoTTablePutItemPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "dynamoDB:PutItem"
+                Resource: !GetAtt FunnelIoTTable.Arn
+  # Iotトピックルール
+  FunnelIoTRuleAction:
+    Type: AWS::IoT::TopicRule
+    Properties:
+      TopicRulePayload:
+        Actions:
+          - DynamoDBv2:
+              RoleArn: !GetAtt FunnelIoTTablePutItemRole.Arn
+              PutItem:
+                TableName: !Ref FunnelIoTTable
+        AwsIotSqlVersion: "2016-03-23"
+        Description: String
+        RuleDisabled: false
+        # SORACOM Funnelのtimestampはミリ秒。2年足してTTLとする
+        Sql: >-
+          SELECT
+          *,
+          timestamp / 1000 + 63072000 AS TTL
+          FROM 'gpsmulti/#'
+  # API Gateway
+  FunnelIoTAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: v1
+      Auth:
+        # 認証方式
+        DefaultAuthorizer: MyLambdaTokenAuthorizer
+        # CROSの都合でブラウザから認証無しOPTIONSメソッドが来る。OPTIONSメソッドを通す
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          MyLambdaTokenAuthorizer:
+            FunctionPayloadType: REQUEST
+            FunctionArn: !GetAtt MyAuthFunction.Arn
+            Identity:
+              Headers:
+                - Authorization
+              ReauthorizeEvery: 30 # 認証結果キャッシュする秒数の模様
+  MyAuthFunction: # Token認証用lambda
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: auth_lambda/
+      Handler: auth.auth_request_lambda_handler
+      Runtime: python3.7
+  # API Gateway用Lambdaの設定
+  GetDynamoDataFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: app_lambda/
+      Handler: app.lambda_handler
+      Runtime: python3.7
+      Policies:
+       - DynamoDBCrudPolicy:
+           TableName: !Ref FunnelIoTTable
+      Events:
+        HelloWorld:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /gps-data
+            Method: get
+            RestApiId:
+              Ref: FunnelIoTAPI
+  StreamFunction: # DynamoDB Stream用
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: stream_lambda/
+      Handler: stream.stream_request_lambda_handler
+      Runtime: python3.7
+      Policies:
+       - SESCrudPolicy:
+           IdentityName: !Ref mailaddress
+      Events:
+        MyStreamEvent:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt FunnelIoTTable.StreamArn
+            StartingPosition: LATEST
+            MaximumRetryAttempts: 2
+
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  #HelloWorldApi:
+  #  Description: "API Gateway endpoint URL for Prod stage for Hello World function"
+  #  Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
+  GetDynamoDataFunction:
+    Description: "Hello World Lambda Function ARN"
+    Value: !GetAtt GetDynamoDataFunction.Arn
+  #HelloWorldFunctionIamRole:
+  #  Description: "Implicit IAM Role created for Hello World function"
+  #  Value: !GetAtt HelloWorldFunctionRole.Arn
