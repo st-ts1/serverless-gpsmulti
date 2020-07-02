@@ -114,6 +114,11 @@ Resources:
       CodeUri: auth_lambda/
       Handler: auth.auth_request_lambda_handler
       Runtime: python3.7
+  MyAuthFunctionLogGroup: # CloudWatchのlogを定義
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${MyAuthFunction}
+      RetentionInDays: 365
   # API Gateway用Lambdaの設定
   GetDynamoDataFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
@@ -132,6 +137,11 @@ Resources:
             Method: get
             RestApiId:
               Ref: FunnelIoTAPI
+  GetDynamoDataFunctionLogGroup: # CloudWatchのlogを定義
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${GetDynamoDataFunction}
+      RetentionInDays: 365
   StreamFunction: # DynamoDB Stream用
     Type: AWS::Serverless::Function
     Properties:
@@ -148,6 +158,11 @@ Resources:
             Stream: !GetAtt FunnelIoTTable.StreamArn
             StartingPosition: LATEST
             MaximumRetryAttempts: 2
+  StreamFunctionLogGroup: # CloudWatchのlogを定義
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${StreamFunction}
+      RetentionInDays: 365
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function

@@ -146,6 +146,11 @@ Resources:
             Method: get
             RestApiId:
               Ref: FunnelIoTAPI
+  GetDynamoDataFunctionLogGroup: # CloudWatchのlogを定義
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${GetDynamoDataFunction}
+      RetentionInDays: 365
   StreamFunction: # DynamoDB Stream用
     Type: AWS::Serverless::Function
     Properties:
@@ -162,6 +167,11 @@ Resources:
             Stream: !GetAtt FunnelIoTTable.StreamArn
             StartingPosition: LATEST
             MaximumRetryAttempts: 2
+  StreamFunctionLogGroup: # CloudWatchのlogを定義
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${StreamFunction}
+      RetentionInDays: 365
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
