@@ -15,10 +15,13 @@ Parameters:
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Api:
-   Cors: # CROSの設定
-     AllowMethods: "'*'"
-     AllowHeaders: "'*'"
-     AllowOrigin: "'*'"
+    Cors: # CROSの設定
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+    # SAMのバグでApi-GatewayにStageというStageができるのを回避する
+    # 参考: https://medium.com/veltra-engineering/avoid-aws-sam-stage-stage-45f7331b7b5d
+    OpenApiVersion: 3.0.1
   Function:
     Timeout: 5
     Environment:
@@ -46,7 +49,7 @@ Resources:
         AttributeName: "TTL"
         Enabled: true # TTLの有効化 
       ProvisionedThroughput:
-        ReadCapacityUnits: 2
+        ReadCapacityUnits: 1
         WriteCapacityUnits: 2
       StreamSpecification:
         StreamViewType: NEW_IMAGE # データ更新の場合は、新しい(更新済み)データをlambdaに渡す。

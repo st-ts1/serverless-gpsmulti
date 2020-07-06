@@ -103,9 +103,42 @@ Resources:
         DefaultAuthorizer: MyCognitoAuthorizer
         # CROSの都合でブラウザから認証無しOPTIONSメソッドが来る。OPTIONSメソッドを通す
         AddDefaultAuthorizerToCorsPreflight: false
+        # APIキーを使うかだが、使う場合CROSのOPTIONSにもAPIキーが必要となった。ブラウザからは送られてこない。
+        ApiKeyRequired: true
         Authorizers:
           MyCognitoAuthorizer:
             UserPoolArn: !GetAtt MyCognitoUserPool.Arn
+  ApiKey: 
+    Type: AWS::ApiGateway::ApiKey
+    Properties: 
+      Name: !Join ["", [{"Ref": "AWS::StackName"}, "-apikey"]]
+      Description: "CloudFormation API Key V1"
+      Enabled: true
+      Value: 123456789abcdef1234567890
+      StageKeys:
+        - RestApiId: !Ref FunnelIoTAPI
+          StageName: v1
+
+  ApiUsagePlan:
+    Type: "AWS::ApiGateway::UsagePlan"
+    Properties:
+      ApiStages: 
+        - ApiId: !Ref FunnelIoTAPI
+          Stage: v1     
+      Description: !Join [" ", [{"Ref": "AWS::StackName"}, "usage plan"]]
+      Quota:
+        Limit: 1000
+        Period: MONTH
+      UsagePlanName: !Join ["", [{"Ref": "AWS::StackName"}, "-usage-plan"]]
+
+  ApiUsagePlanKey:
+    Type: "AWS::ApiGateway::UsagePlanKey"
+    DependsOn: 
+      - FunnelIoTAPI
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
   # Cognitoユーザプールの設定
   MyCognitoUserPool:
     Type: AWS::Cognito::UserPool
